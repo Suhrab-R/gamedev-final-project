@@ -2,7 +2,7 @@
   "network": {
     "port": 5555,
     "tick_rate": 60,
-    "snapshot_rate": 30
+    "snapshot_rate": 60
   },
   "world": {
     "width": 1280,
@@ -19,7 +19,6 @@
     "spacing_y": 80
   },
   "client": {
-    "fps": 60,
-    "interpolation_delay": 0.1
+    "fps": 60
   }
 }

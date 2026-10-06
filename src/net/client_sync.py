@@ -1,15 +1,10 @@
-"""Keeping the client's picture of the game smooth and responsive.
+"""Client-side prediction: making your own player respond instantly.
 
-Two standard multiplayer techniques:
-
-- LocalPrediction (your own player): move instantly on this computer instead
-  of waiting a round trip for the server, then quietly correct to the server.
-- SnapshotInterpolator (everyone else): draw other players slightly in the
-  past, blending between two real snapshots, so they glide instead of jumping
-  each time a snapshot arrives.
+Instead of waiting a round trip for the server before your player moves,
+the client moves it straight away and quietly corrects to the server.
+Other players are simply drawn at the newest position the server sent
+(see Game._apply_snapshot).
 """
-
-from collections import deque
 
 from entities.player import step_movement
 from net.protocol import COMMANDS_PER_PACKET, MAX_COMMAND_DT
@@ -69,68 +64,3 @@ class LocalPrediction:
         self.x, self.y = x, y
         self.ready = True
 
-
-class SnapshotInterpolator:
-    """Works out where to draw other players each frame.
-
-    Snapshots arrive about 30 times a second, and unevenly over Wi-Fi, while
-    we draw 60 frames a second. So other players are drawn `delay` seconds
-    behind the newest snapshot, at a point between two snapshots we already
-    have, blending between them. Time is measured in server ticks (each
-    snapshot is stamped with the tick it was taken on).
-    """
-
-    def __init__(self, tick_rate, delay_seconds):
-        self.tick_rate = tick_rate
-        self.delay_ticks = delay_seconds * tick_rate
-        self.snapshots = deque()  # (tick, {player_id: (x, y)}), oldest first
-        self.render_tick = None  # the moment in server time we are drawing
-
-    def add(self, tick, positions):
-        """Store a snapshot. Returns False if it is older than one we already have."""
-        if self.snapshots and tick <= self.snapshots[-1][0]:
-            return False  # UDP can deliver packets late or out of order
-        self.snapshots.append((tick, positions))
-        return True
-
-    def advance(self, dt):
-        """Move the drawing clock forward by one frame."""
-        if not self.snapshots:
-            return
-        target = self.snapshots[-1][0] - self.delay_ticks
-
-        if self.render_tick is None or abs(target - self.render_tick) > self.tick_rate / 2:
-            # First snapshot, or way off (e.g. after a long freeze): jump straight there.
-            self.render_tick = target
-        else:
-            # Advance at normal speed, and drift gently toward the target so
-            # we neither run out of snapshots nor fall further behind.
-            self.render_tick += dt * self.tick_rate
-            self.render_tick += (target - self.render_tick) * min(1.0, dt * 2.0)
-
-        # Throw away snapshots that are no longer needed: keep only one that
-        # is older than the moment we are drawing.
-        while len(self.snapshots) >= 2 and self.snapshots[1][0] <= self.render_tick:
-            self.snapshots.popleft()
-
-    def position_of(self, player_id):
-        """Where to draw a player right now, or None if they aren't in any snapshot."""
-        before = None  # newest snapshot at or before render_tick containing this player
-        for tick, positions in self.snapshots:
-            if player_id not in positions:
-                continue
-            if tick <= self.render_tick:
-                before = (tick, positions[player_id])
-                continue
-
-            # This snapshot is after render_tick: blend between `before` and it.
-            if before is None:
-                return positions[player_id]
-            before_tick, (before_x, before_y) = before
-            after_x, after_y = positions[player_id]
-            t = (self.render_tick - before_tick) / (tick - before_tick)  # 0..1
-            return (before_x + (after_x - before_x) * t,
-                    before_y + (after_y - before_y) * t)
-
-        # No newer snapshot (e.g. a gap in packets): hold the latest position.
-        return before[1] if before is not None else None

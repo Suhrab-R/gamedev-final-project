@@ -10,7 +10,7 @@ from core.state_machine import StateMachine
 from entities.player import Player
 from net import protocol
 from net.client import NetworkClient
-from net.client_sync import LocalPrediction, SnapshotInterpolator
+from net.client_sync import LocalPrediction
 from states.character_select import CharacterSelectState
 
 WINDOW_TITLE = "Final Project"
@@ -31,11 +31,10 @@ class Game:
         self.players = {}  # player id -> Player, built from the server's roster
         self.disconnect_reason = None
 
-        # Smooth movement: our own player is predicted, everyone else interpolated.
+        # Our own player is predicted so it moves instantly; everyone else is
+        # drawn at the newest position the server sent.
         self.prediction = LocalPrediction(settings)
-        self.interpolator = SnapshotInterpolator(
-            settings["network"]["tick_rate"], settings["client"]["interpolation_delay"]
-        )
+        self.latest_snapshot_tick = -1  # tick of the newest snapshot applied
 
         self.states = StateMachine()
 
@@ -99,15 +98,21 @@ class Game:
                 del self.players[player_id]
 
     def _apply_snapshot(self, tick, snapshot_players):
-        positions = {}
-        my_entry = None
-        for player_id, x, y, last_command_seq in snapshot_players:
-            positions[player_id] = (x, y)
-            if player_id == self.my_id:
-                my_entry = (x, y, last_command_seq)
-
-        # Out-of-order (old) snapshots are ignored entirely.
-        if not self.interpolator.add(tick, positions):
+        """Use the server's newest positions for everyone."""
+        # UDP can deliver packets late or out of order; ignore anything older
+        # than what we already have.
+        if tick <= self.latest_snapshot_tick:
             return
-        if my_entry is not None:
-            self.prediction.reconcile(*my_entry)
+        self.latest_snapshot_tick = tick
+
+        for player_id, x, y, last_command_seq in snapshot_players:
+            if player_id == self.my_id:
+                # Our own player: correct the prediction (PlayingState draws it).
+                self.prediction.reconcile(x, y, last_command_seq)
+                continue
+            player = self.players.get(player_id)
+            if player is None:
+                continue  # their roster entry (TCP) hasn't arrived yet
+            # Everyone else: draw them exactly where the server says they are.
+            player.x = player.draw_x = x
+            player.y = player.draw_y = y

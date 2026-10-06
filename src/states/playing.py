@@ -1,8 +1,8 @@
 """State 2: in the game, moving around with the other players.
 
-Each frame we send the held keys to the server as a command, move our own
-player straight away (prediction), and draw everyone else between the
-server's snapshots (interpolation). See net/client_sync.py.
+Each frame we send the held keys to the server as a command and move our own
+player straight away (prediction, see net/client_sync.py). Everyone else is
+drawn at the newest position from the server's snapshots.
 """
 
 from pyray import *
@@ -48,23 +48,12 @@ class PlayingState(GameState):
         packet = protocol.pack_commands(game.udp_token, game.prediction.commands_to_send())
         game.net.send_udp(packet)
 
-        # 2. Move the interpolation clock forward one frame.
-        game.interpolator.advance(dt)
-
-        # 3. Decide where every player is drawn this frame.
-        for player in game.players.values():
-            if player.id == game.my_id:
-                if game.prediction.ready:
-                    position = (game.prediction.x, game.prediction.y)
-                else:
-                    position = None
-            else:
-                position = game.interpolator.position_of(player.id)
-
-            if position is None:
-                player.draw_x = player.draw_y = None
-            else:
-                player.draw_x, player.draw_y = position
+        # 2. Draw our own player at the predicted position. (Other players'
+        #    draw positions are set straight from each snapshot in Game.)
+        me = game.my_player()
+        if me is not None and game.prediction.ready:
+            me.draw_x = game.prediction.x
+            me.draw_y = game.prediction.y
 
     def render(self):
         game = self.game
