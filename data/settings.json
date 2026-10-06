@@ -1,0 +1,25 @@
+{
+  "network": {
+    "port": 5555,
+    "tick_rate": 60,
+    "snapshot_rate": 30
+  },
+  "world": {
+    "width": 1920,
+    "height": 1080
+  },
+  "player": {
+    "size": 50,
+    "speed": 400
+  },
+  "spawn": {
+    "blue_x": 200,
+    "red_x": 1670,
+    "first_y": 120,
+    "spacing_y": 80
+  },
+  "client": {
+    "fps": 60,
+    "interpolation_delay": 0.1
+  }
+}

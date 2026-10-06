@@ -1,0 +1,7 @@
+{
+  "characters": [
+    { "id": "square", "name": "Square", "shape": "square" },
+    { "id": "circle", "name": "Circle", "shape": "circle" },
+    { "id": "triangle", "name": "Triangle", "shape": "triangle" }
+  ]
+}
