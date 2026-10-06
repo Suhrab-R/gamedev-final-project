@@ -1,4 +1,4 @@
-"""The client's connection to the dedicated server.
+"""A client's connection to the host.
 
 TCP: a background thread connects and keeps reading, so the game loop never
 freezes waiting on the network. Received messages go into a queue that the
@@ -56,9 +56,9 @@ class NetworkClient:
             pass
 
         if self.connected:
-            reason = "Lost connection to the server."
+            reason = "Lost connection to the host."
         else:
-            reason = f"Could not connect to a server at {self.address}:{self.port}."
+            reason = f"Could not connect to a game hosted at {self.address}:{self.port}."
         self.connected = False
         self._incoming.put({"type": protocol.DISCONNECTED, "reason": reason})
 

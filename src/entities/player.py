@@ -1,13 +1,12 @@
 """The Player entity and its movement rules.
 
-This file is used by both sides:
-- the server owns the real Player objects and moves them with step_movement();
-- the client keeps copies built from the server's roster, and runs the same
-  step_movement() to predict its own player (see net/client_sync.py).
+The host's server owns the real Player objects and moves them with
+step_movement(). Clients keep copies built from the host's roster and
+snapshots, and only draw them.
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 TEAM_BLUE = "blue"
 TEAM_RED = "red"
@@ -27,37 +26,36 @@ class Player:
     y: float = 0.0
     is_host: bool = False
 
-    # Server only: movement commands received from this player's client that
-    # haven't been applied yet, and the sequence number of the last applied one.
-    pending_commands: list = field(default_factory=list)
-    last_command_seq: int = 0
-
-    # Client only: where this player is drawn this frame (None = not drawn yet).
-    draw_x: float | None = None
-    draw_y: float | None = None
+    # Server only: the movement keys this player is holding right now, and the
+    # sequence number of the newest input packet (older, late ones are ignored).
+    input_x: int = 0
+    input_y: int = 0
+    last_input_seq: int = 0
 
     def to_roster_dict(self):
-        """The fields sent over TCP in a roster message (positions go over UDP)."""
+        """The fields sent over TCP in a roster message."""
         return {
             "id": self.id,
             "team": self.team,
             "character": self.character,
             "is_host": self.is_host,
+            "x": self.x,
+            "y": self.y,
         }
 
     def apply_roster_dict(self, data):
-        """Copy the fields from a roster message into this player."""
+        """Copy the fields from a roster message into this player.
+
+        Positions are left alone: they come from the much more frequent UDP
+        snapshots (see ClientSession._apply_roster for the one exception).
+        """
         self.team = data["team"]
         self.character = data["character"]
         self.is_host = data["is_host"]
 
 
 def step_movement(x, y, input_x, input_y, dt, settings):
-    """Return the new (x, y) after moving for dt seconds with the given input.
-
-    The server and the client both call this with the same inputs, so the
-    client's prediction of its own player matches what the server computes.
-    """
+    """Return the new (x, y) after moving for dt seconds with the given input."""
     length = math.hypot(input_x, input_y)
     if length > 0.0:
         # Normalize the direction so diagonal movement is not faster.

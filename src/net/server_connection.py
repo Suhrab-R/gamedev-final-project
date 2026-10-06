@@ -3,10 +3,10 @@
 Each connection runs two small threads:
 - a reader that puts the client's messages into the server's shared inbox;
 - a writer that sends queued messages, so a slow or frozen client can never
-  stall the server's main tick loop.
+  stall the host's game loop.
 
-Only the server's main thread touches game state; these threads just move
-bytes in and out.
+Only the game loop touches game state; these threads just move bytes in
+and out. (Positions go over UDP and don't pass through here.)
 """
 
 import queue
@@ -15,14 +15,14 @@ import threading
 
 from net import protocol
 
-# How many unsent messages a client may fall behind by before it gets
-# dropped (about 4 seconds of snapshots at 30 per second).
+# How many unsent TCP messages a client may fall behind by before it gets
+# dropped (these are rare, so a client this far behind has stopped reading).
 OUTBOX_LIMIT = 120
 
 
 class ClientConnection:
-    def __init__(self, client_id, sock, address, inbox):
-        self.id = client_id
+    def __init__(self, sock, address, inbox):
+        self.id = None  # the player id, given by the server when it adds the player
         self.address = address
         self.alive = True
 

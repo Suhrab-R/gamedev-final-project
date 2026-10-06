@@ -1,8 +1,6 @@
 {
   "network": {
-    "port": 5555,
-    "tick_rate": 60,
-    "snapshot_rate": 60
+    "port": 5555
   },
   "world": {
     "width": 1280,

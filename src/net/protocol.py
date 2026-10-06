@@ -1,26 +1,26 @@
-"""The message formats shared by the server and the clients.
+"""The message formats shared by the host and the clients.
 
 Two channels are used:
 
 TCP (reliable, ordered) for things that must arrive, sent as one JSON
 object per line ("newline-delimited JSON"):
 
-  client -> server
+  client -> host
     choose_character   {"character": "<character id>"}
 
-  server -> client
+  host -> client
     welcome            {"id", "team", "token", "udp_port"}   sent once on join
-    roster             {"players": [{"id", "team", "character", "is_host"}, ...]}
+    roster             {"players": [{"id", "team", "character", "is_host", "x", "y"}, ...]}
                        sent whenever someone joins, leaves or picks a character
 
-UDP (fast, may lose or reorder packets) for data sent many times per second,
-packed as compact binary with the struct module:
+UDP (fast, may lose or reorder packets) for data sent every frame, packed as
+compact binary with the struct module:
 
-  client -> server   commands   the player's held keys, one numbered command per frame
-  server -> client   snapshot   every player's position, sent snapshot_rate times a second
+  client -> host   input      the movement keys the player is holding
+  host -> client   snapshot   every player's position
 
-A lost UDP packet is simply replaced by the next one, so nothing ever stalls
-waiting for a resend (which is what TCP would do).
+A lost UDP packet is simply replaced by the next one a frame later, so
+nothing ever stalls waiting for a resend (which is what TCP would do).
 
 "connected" / "disconnected" are local-only events that the networking
 threads put in a queue; they are never sent over the network.
@@ -77,68 +77,51 @@ class MessageReader:
 # ----------------------------------------------------------------------
 
 # The first byte of every UDP packet says what kind it is.
-PACKET_COMMANDS = 1
+PACKET_INPUT = 1
 PACKET_SNAPSHOT = 2
 
 # struct format codes: "<" little-endian with no padding, B = uint8,
 # H = uint16, I = uint32, b = int8, f = float32.
-COMMANDS_HEADER = struct.Struct("<BIB")  # packet type, player's token, command count
-COMMAND = struct.Struct("<Ibbf")  # sequence number, input x, input y, frame dt
-SNAPSHOT_HEADER = struct.Struct("<BIB")  # packet type, server tick, player count
-SNAPSHOT_PLAYER = struct.Struct("<HffI")  # player id, x, y, last command applied
+INPUT_PACKET = struct.Struct("<BIIbb")  # packet type, player's token, sequence number, input x, input y
+SNAPSHOT_HEADER = struct.Struct("<BIB")  # packet type, frame number, player count
+SNAPSHOT_PLAYER = struct.Struct("<Hff")  # player id, x, y
 
-# Each commands packet repeats the newest few commands, so one lost packet
-# doesn't lose any input (the next packet carries it again).
-COMMANDS_PER_PACKET = 3
-
-# The longest frame one command may cover, in seconds. Both sides clamp to
-# this, so a lag spike can't teleport a player.
-MAX_COMMAND_DT = 0.1
-
-# Big enough for any packet we send (20 players is about 300 bytes).
+# Big enough for any packet we send (20 players is about 200 bytes).
 MAX_PACKET_SIZE = 2048
 
 
-def pack_commands(token, commands):
-    """commands: list of (sequence, input_x, input_y, dt), oldest first."""
-    data = COMMANDS_HEADER.pack(PACKET_COMMANDS, token, len(commands))
-    for command in commands:
-        data += COMMAND.pack(*command)
-    return data
+def pack_input(token, sequence, input_x, input_y):
+    return INPUT_PACKET.pack(PACKET_INPUT, token, sequence, input_x, input_y)
 
 
-def unpack_commands(data):
-    """Return (token, commands), or None if the packet is malformed."""
+def unpack_input(data):
+    """Return (token, sequence, input_x, input_y), or None if the packet is malformed."""
     try:
-        _, token, count = COMMANDS_HEADER.unpack_from(data, 0)
-        commands = [
-            COMMAND.unpack_from(data, COMMANDS_HEADER.size + i * COMMAND.size)
-            for i in range(count)
-        ]
+        _, token, sequence, input_x, input_y = INPUT_PACKET.unpack(data)
     except struct.error:
         return None
-    return token, commands
+    return token, sequence, input_x, input_y
 
 
-def pack_snapshot(tick, players):
-    """players: list of (player_id, x, y, last_command_seq)."""
-    data = SNAPSHOT_HEADER.pack(PACKET_SNAPSHOT, tick, len(players))
+def pack_snapshot(frame, players):
+    """players: list of (player_id, x, y)."""
+    data = SNAPSHOT_HEADER.pack(PACKET_SNAPSHOT, frame, len(players))
     for player in players:
         data += SNAPSHOT_PLAYER.pack(*player)
     return data
 
 
 def unpack_snapshot(data):
-    """Return (tick, players), or None if the packet is malformed."""
+    """Return (frame, players), or None if the packet is malformed."""
     try:
-        _, tick, count = SNAPSHOT_HEADER.unpack_from(data, 0)
+        _, frame, count = SNAPSHOT_HEADER.unpack_from(data, 0)
         players = [
             SNAPSHOT_PLAYER.unpack_from(data, SNAPSHOT_HEADER.size + i * SNAPSHOT_PLAYER.size)
             for i in range(count)
         ]
     except struct.error:
         return None
-    return tick, players
+    return frame, players
 
 
 def make_udp_socket(port=0):
