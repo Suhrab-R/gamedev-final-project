@@ -5,7 +5,7 @@ set of methods, so they work the same whether this computer is the host or a
 client:
 
     update(dt)                       networking (and, for the host, the server) for one frame
-    send_input(input_x, input_y)     the movement keys held this frame
+    send_input(input_x, input_y, jump_held, run_held)   the keys held this frame
     choose_character(character_id)
     close()
 
@@ -51,8 +51,8 @@ class HostSession:
         if self.disconnect_reason is None:
             self.server.step(dt)
 
-    def send_input(self, input_x, input_y):
-        self.server.set_input(self.my_id, input_x, input_y)
+    def send_input(self, input_x, input_y, jump_held, run_held):
+        self.server.set_input(self.my_id, input_x, input_y, jump_held, run_held)
 
     def choose_character(self, character_id):
         self.server.choose_character(self.my_id, character_id)
@@ -99,12 +99,13 @@ class ClientSession:
             if unpacked is not None:
                 self._apply_snapshot(*unpacked)
 
-    def send_input(self, input_x, input_y):
+    def send_input(self, input_x, input_y, jump_held, run_held):
         """Send the held keys to the host. Called every frame while playing."""
         if self._udp_token is None:
             return
         self._input_seq += 1
-        self.net.send_udp(protocol.pack_input(self._udp_token, self._input_seq, input_x, input_y))
+        self.net.send_udp(protocol.pack_input(self._udp_token, self._input_seq,
+                                              input_x, input_y, jump_held, run_held))
 
     def choose_character(self, character_id):
         self.net.send({"type": protocol.CHOOSE_CHARACTER, "character": character_id})
@@ -147,8 +148,10 @@ class ClientSession:
         self._latest_frame = frame
         self.has_positions = True
 
-        for player_id, x, y in snapshot_players:
+        for player_id, x, y, facing, jump_count in snapshot_players:
             player = self.players.get(player_id)
             if player is not None:
                 player.x = x
                 player.y = y
+                player.facing = facing
+                player.jump_count = jump_count

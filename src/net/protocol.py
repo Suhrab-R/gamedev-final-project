@@ -16,8 +16,8 @@ object per line ("newline-delimited JSON"):
 UDP (fast, may lose or reorder packets) for data sent every frame, packed as
 compact binary with the struct module:
 
-  client -> host   input      the movement keys the player is holding
-  host -> client   snapshot   every player's position
+  client -> host   input      the keys the player is holding (direction, jump, run)
+  host -> client   snapshot   every player's position, facing and jump count
 
 A lost UDP packet is simply replaced by the next one a frame later, so
 nothing ever stalls waiting for a resend (which is what TCP would do).
@@ -82,29 +82,38 @@ PACKET_SNAPSHOT = 2
 
 # struct format codes: "<" little-endian with no padding, B = uint8,
 # H = uint16, I = uint32, b = int8, f = float32.
-INPUT_PACKET = struct.Struct("<BIIbb")  # packet type, player's token, sequence number, input x, input y
+INPUT_PACKET = struct.Struct("<BIIbbB")  # packet type, player's token, sequence number, input x, input y, buttons
 SNAPSHOT_HEADER = struct.Struct("<BIB")  # packet type, frame number, player count
-SNAPSHOT_PLAYER = struct.Struct("<Hff")  # player id, x, y
+SNAPSHOT_PLAYER = struct.Struct("<HffbB")  # player id, x, y, facing (1 or -1), jump count
+
+# Bits of the input packet's buttons byte (several can be set at once).
+BUTTON_JUMP = 1
+BUTTON_RUN = 2
 
 # Big enough for any packet we send (20 players is about 200 bytes).
 MAX_PACKET_SIZE = 2048
 
 
-def pack_input(token, sequence, input_x, input_y):
-    return INPUT_PACKET.pack(PACKET_INPUT, token, sequence, input_x, input_y)
+def pack_input(token, sequence, input_x, input_y, jump_held, run_held):
+    buttons = 0
+    if jump_held:
+        buttons |= BUTTON_JUMP
+    if run_held:
+        buttons |= BUTTON_RUN
+    return INPUT_PACKET.pack(PACKET_INPUT, token, sequence, input_x, input_y, buttons)
 
 
 def unpack_input(data):
-    """Return (token, sequence, input_x, input_y), or None if the packet is malformed."""
+    """Return (token, sequence, input_x, input_y, jump_held, run_held), or None if malformed."""
     try:
-        _, token, sequence, input_x, input_y = INPUT_PACKET.unpack(data)
+        _, token, sequence, input_x, input_y, buttons = INPUT_PACKET.unpack(data)
     except struct.error:
         return None
-    return token, sequence, input_x, input_y
+    return token, sequence, input_x, input_y, bool(buttons & BUTTON_JUMP), bool(buttons & BUTTON_RUN)
 
 
 def pack_snapshot(frame, players):
-    """players: list of (player_id, x, y)."""
+    """players: list of (player_id, x, y, facing, jump_count)."""
     data = SNAPSHOT_HEADER.pack(PACKET_SNAPSHOT, frame, len(players))
     for player in players:
         data += SNAPSHOT_PLAYER.pack(*player)

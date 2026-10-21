@@ -20,12 +20,14 @@ import random
 import socket
 import threading
 
-from entities.player import TEAM_BLUE, TEAM_RED, TEAMS, Player, other_team, step_movement
+from entities.physics import step_player
+from entities.player import TEAM_BLUE, TEAM_RED, TEAMS, Player, other_team
 from net import protocol
 from net.server_connection import ClientConnection
 
 # The longest step the simulation takes in one frame (seconds). If the host's
-# game hitches, players move a bit less that frame instead of teleporting.
+# game hitches, players move a bit less that frame instead of teleporting
+# (or falling through the ground).
 MAX_STEP_DT = 0.1
 
 
@@ -107,12 +109,11 @@ class GameServer:
         print(f"Host is player {player.id}, team {player.team}.")
         return player
 
-    def set_input(self, player_id, input_x, input_y):
+    def set_input(self, player_id, input_x, input_y, jump_held, run_held):
         """Set the keys a player is holding (used for the host's own player)."""
         player = self.players.get(player_id)
         if player is not None:
-            player.input_x = clamp_axis(input_x)
-            player.input_y = clamp_axis(input_y)
+            apply_input(player, input_x, input_y, jump_held, run_held)
 
     def choose_character(self, player_id, character_id):
         """Give a player their character and put them in the game."""
@@ -121,6 +122,7 @@ class GameServer:
             return  # unknown player or character, or already chosen
         player.character = character_id
         player.x, player.y = self._spawn_position(player)
+        player.vx = player.vy = 0.0
         self._broadcast_roster()
         print(f"Player {player.id} chose {character_id}.")
 
@@ -173,7 +175,7 @@ class GameServer:
             unpacked = protocol.unpack_input(data)
             if unpacked is None:
                 continue
-            token, sequence, input_x, input_y = unpacked
+            token, sequence, input_x, input_y, jump_held, run_held = unpacked
 
             # The token tells us which player sent this packet.
             player_id = self.player_id_by_token.get(token)
@@ -186,21 +188,19 @@ class GameServer:
             player = self.players[player_id]
             if sequence > player.last_input_seq:
                 player.last_input_seq = sequence
-                player.input_x = clamp_axis(input_x)
-                player.input_y = clamp_axis(input_y)
+                apply_input(player, input_x, input_y, jump_held, run_held)
 
     def _update(self, dt):
-        """Move every player in the game by the keys they are holding."""
+        """Run every in-game player's physics with the keys they are holding."""
         for player in self.players.values():
             if player.character is None:
                 continue  # still on the character select screen
-            player.x, player.y = step_movement(
-                player.x, player.y, player.input_x, player.input_y, dt, self.settings
-            )
+            step_player(player, dt, self.settings)
 
     def _send_snapshots(self):
-        """Send every in-game player's position to every client over UDP."""
-        in_game = [(p.id, p.x, p.y) for p in self.players.values() if p.character is not None]
+        """Send every in-game player's position, facing and jump count to every client over UDP."""
+        in_game = [(p.id, p.x, p.y, p.facing, p.jump_count)
+                   for p in self.players.values() if p.character is not None]
         packet = protocol.pack_snapshot(self.frame, in_game)
         for connection in self.connections.values():
             if connection.udp_address is None:
@@ -279,28 +279,37 @@ class GameServer:
         return other_team(last_player.team)
 
     def _spawn_position(self, player):
-        """Spawn on the team's side, in a column below teammates already in the game."""
+        """Spawn standing on the ground on the team's side, next to teammates.
+
+        Blue spawns from the left going right, red from the right going left.
+        After per_row players the row starts over (players can overlap).
+        """
         spawn = self.settings["spawn"]
-        if player.team == TEAM_BLUE:
-            x = spawn["blue_x"]
-        else:
-            x = spawn["red_x"]
 
         teammates_in_game = 0
         for other in self.players.values():
             if other is not player and other.team == player.team and other.character is not None:
                 teammates_in_game += 1
+        offset = (teammates_in_game % spawn["per_row"]) * spawn["spacing_x"]
 
-        # How many players fit in one column before the bottom of the world.
-        usable_height = self.settings["world"]["height"] - spawn["first_y"] - self.settings["player"]["size"]
-        players_per_column = int(usable_height // spawn["spacing_y"]) + 1
+        if player.team == TEAM_BLUE:
+            x = spawn["blue_x"] + offset
+        else:
+            x = spawn["red_x"] - offset
 
-        # Wrap back to the top once a column is full.
-        row = teammates_in_game % players_per_column
-        y = spawn["first_y"] + row * spawn["spacing_y"]
+        world = self.settings["world"]
+        y = world["height"] - world["ground_height"] - self.settings["player"]["height"]
         return x, y
 
 
 def clamp_axis(value):
     """Turn an input value into -1, 0 or 1."""
     return max(-1, min(1, value))
+
+
+def apply_input(player, input_x, input_y, jump_held, run_held):
+    """Store the keys a player is holding; the physics reads them next step."""
+    player.input_x = clamp_axis(input_x)
+    player.input_y = clamp_axis(input_y)
+    player.jump_held = bool(jump_held)
+    player.run_held = bool(run_held)

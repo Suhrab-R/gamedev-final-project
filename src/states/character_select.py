@@ -12,7 +12,7 @@ from core.state_machine import GameState
 from states.playing import PlayingState
 from ui.draw import (
     BACKGROUND_COLOR, MUTED_TEXT_COLOR, TEAM_COLORS, TEXT_COLOR,
-    draw_character, draw_disconnected_overlay, draw_text_centered,
+    draw_disconnected_overlay, draw_text_centered,
 )
 
 # Layout of the character cards
@@ -20,7 +20,10 @@ CARD_WIDTH = 220
 CARD_HEIGHT = 260
 CARD_GAP = 40
 CARD_TOP = 230
-PREVIEW_SIZE = 110  # the shape is drawn bigger here than in game
+PREVIEW_HEIGHT = 140  # the shape is drawn bigger here than in game
+# Every sprite is scaled up by the same whole number (so pixels stay even and
+# characters keep their real size difference, e.g. Mario shorter than Luigi).
+PREVIEW_SPRITE_SCALE = 4
 
 
 class CharacterSelectState(GameState):
@@ -82,7 +85,7 @@ class CharacterSelectState(GameState):
 
         # Footer: controls, or a waiting message after confirming
         if self.confirmed:
-                        footer = "Waiting for the host..."
+            footer = "Waiting for the host..."
         else:
             footer = "A / D or LEFT / RIGHT to choose,  ENTER or SPACE to confirm"
         draw_text_centered(footer, width / 2, CARD_TOP + CARD_HEIGHT + 60, 22, TEXT_COLOR)
@@ -92,6 +95,9 @@ class CharacterSelectState(GameState):
 
     def _draw_cards(self, team, screen_width):
         characters = self.game.characters
+        # Keep the in-game hitbox's proportions, just scaled up.
+        player = self.game.settings["player"]
+        preview_width = PREVIEW_HEIGHT * player["width"] / player["height"]
         total_width = len(characters) * CARD_WIDTH + (len(characters) - 1) * CARD_GAP
         left = (screen_width - total_width) / 2
 
@@ -106,9 +112,10 @@ class CharacterSelectState(GameState):
             else:
                 draw_rectangle_lines_ex(card, 2, LIGHTGRAY)
 
-            preview_x = card_x + (CARD_WIDTH - PREVIEW_SIZE) / 2
-            preview_y = CARD_TOP + 50
-            draw_character(character["shape"], preview_x, preview_y, PREVIEW_SIZE, team)
+            preview_x = card_x + (CARD_WIDTH - preview_width) / 2
+            preview_y = CARD_TOP + 35
+            self.game.draw_player_character(character["id"], preview_x, preview_y, preview_width,
+                                            PREVIEW_HEIGHT, team, sprite_scale=PREVIEW_SPRITE_SCALE)
 
             name_color = TEXT_COLOR if is_selected else MUTED_TEXT_COLOR
             draw_text_centered(character["name"], card_x + CARD_WIDTH / 2,

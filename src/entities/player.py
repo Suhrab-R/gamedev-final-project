@@ -1,11 +1,10 @@
-"""The Player entity and its movement rules.
+"""The Player entity.
 
 The host's server owns the real Player objects and moves them with
-step_movement(). Clients keep copies built from the host's roster and
-snapshots, and only draw them.
+entities.physics.step_player(). Clients keep copies built from the host's
+roster and snapshots, and only draw them.
 """
 
-import math
 from dataclasses import dataclass
 
 TEAM_BLUE = "blue"
@@ -25,12 +24,26 @@ class Player:
     x: float = 0.0  # top-left corner of the hitbox
     y: float = 0.0
     is_host: bool = False
+    facing: int = 1  # 1 = facing right, -1 = facing left (flips the sprite)
+    # Goes up by 1 every time this player jumps (wrapping 255 -> 0). Sent in
+    # snapshots; a screen plays the jump sound when it sees the number change.
+    jump_count: int = 0
 
-    # Server only: the movement keys this player is holding right now, and the
-    # sequence number of the newest input packet (older, late ones are ignored).
-    input_x: int = 0
-    input_y: int = 0
+    # Server only: the keys this player is holding right now, and the sequence
+    # number of the newest input packet (older, late ones are ignored).
+    input_x: int = 0  # -1 left (A), 0, 1 right (D)
+    input_y: int = 0  # -1 up (W), 0, 1 down (S); not used by the physics yet
+    jump_held: bool = False  # space
+    run_held: bool = False  # shift
     last_input_seq: int = 0
+
+    # Server only: physics state (see entities/physics.py).
+    vx: float = 0.0  # pixels per second; positive is right
+    vy: float = 0.0  # pixels per second; positive is down
+    on_ground: bool = False
+    jump_rising: bool = False  # rising from a jump with jump still held (weak gravity)
+    jump_was_held: bool = False  # jump_held last frame, to detect a fresh press
+    jump_buffer_left: float = 0.0  # seconds a recent jump press stays usable (jump buffering)
 
     def to_roster_dict(self):
         """The fields sent over TCP in a roster message."""
@@ -53,18 +66,3 @@ class Player:
         self.character = data["character"]
         self.is_host = data["is_host"]
 
-
-def step_movement(x, y, input_x, input_y, dt, settings):
-    """Return the new (x, y) after moving for dt seconds with the given input."""
-    length = math.hypot(input_x, input_y)
-    if length > 0.0:
-        # Normalize the direction so diagonal movement is not faster.
-        distance = settings["player"]["speed"] * dt
-        x += input_x / length * distance
-        y += input_y / length * distance
-
-    # Keep the hitbox inside the world.
-    size = settings["player"]["size"]
-    x = max(0.0, min(x, settings["world"]["width"] - size))
-    y = max(0.0, min(y, settings["world"]["height"] - size))
-    return x, y

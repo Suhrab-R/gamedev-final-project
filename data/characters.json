@@ -1,7 +1,21 @@
 {
   "characters": [
-    { "id": "square", "name": "Square", "shape": "square" },
-    { "id": "circle", "name": "Circle", "shape": "circle" },
-    { "id": "triangle", "name": "Triangle", "shape": "triangle" }
+    { "id": "rectangle", "name": "Rectangle" },
+    {
+      "id": "luigi",
+      "name": "Luigi",
+      "sprites": {
+        "blue": "sprites/blue_team/luigi_idle.png",
+        "red": "sprites/red_team/luigi_idle.png"
+      }
+    },
+    {
+      "id": "mario",
+      "name": "Mario",
+      "sprites": {
+        "blue": "sprites/blue_team/mario_idle.png",
+        "red": "sprites/red_team/mario_idle.png"
+      }
+    }
   ]
 }

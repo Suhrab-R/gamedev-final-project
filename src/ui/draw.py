@@ -1,8 +1,8 @@
 """Colors and drawing helpers used by every screen.
 
-Characters are placeholder shapes for now. Every character's hitbox is the
-same size x size square; the shape is just drawn inside it, so swapping in
-sprites later won't change gameplay.
+Every character's hitbox is the same width x height upright rectangle.
+Sprite characters are drawn standing on the bottom of that box; placeholder
+shapes are drawn filling it. Either way the look never changes gameplay.
 """
 
 from pyray import *
@@ -22,38 +22,77 @@ TEAM_OUTLINE_COLORS = {
     TEAM_RED: Color(110, 20, 20, 255),
 }
 
+# The level: a faint block grid (to judge jump heights by eye) and the ground.
+GRID_COLOR = Color(222, 223, 232, 255)
+GROUND_COLOR = Color(150, 105, 70, 255)
+GROUND_TOP_COLOR = Color(90, 160, 70, 255)
+
 OUTLINE_THICKNESS = 3.0
 
 
-def draw_character(shape, x, y, size, team):
-    """Draw a character's shape filling the size x size box at (x, y)."""
-    fill = TEAM_COLORS[team]
-    outline = TEAM_OUTLINE_COLORS[team]
+def draw_character(texture, x, y, width, height, team, facing, sprite_scale):
+    """Draw a character in the width x height box at (x, y).
 
-    if shape == "circle":
-        center = Vector2(x + size / 2, y + size / 2)
-        radius = size / 2
-        draw_circle_v(center, radius, fill)
-        draw_ring(center, radius - OUTLINE_THICKNESS, radius, 0, 360, 48, outline)
-    elif shape == "triangle":
-        top = Vector2(x + size / 2, y)
-        bottom_left = Vector2(x, y + size)
-        bottom_right = Vector2(x + size, y + size)
-        # raylib needs triangle points in counter-clockwise order.
-        draw_triangle(top, bottom_left, bottom_right, fill)
-        draw_line_ex(top, bottom_left, OUTLINE_THICKNESS, outline)
-        draw_line_ex(bottom_left, bottom_right, OUTLINE_THICKNESS, outline)
-        draw_line_ex(bottom_right, top, OUTLINE_THICKNESS, outline)
-    else:  # "square" and any unknown shape
-        box = Rectangle(x, y, size, size)
-        draw_rectangle_rec(box, fill)
-        draw_rectangle_lines_ex(box, OUTLINE_THICKNESS, outline)
+    texture is the character's sprite for this team, or None for characters
+    without one (and if a sprite failed to load); those get a rectangle.
+    """
+    if texture is not None:
+        draw_sprite(texture, x, y, width, height, facing, sprite_scale)
+    else:
+        draw_placeholder(x, y, width, height, team)
+
+
+def draw_sprite(texture, x, y, width, height, facing, scale):
+    """Draw a sprite scaled up, centered on the box and standing on its bottom.
+
+    The image faces right. A negative source width makes raylib draw it
+    mirrored, so facing left needs no second image.
+    """
+    sprite_width = texture.width * scale
+    sprite_height = texture.height * scale
+    # Whole-pixel position so the scaled-up pixel art stays crisp.
+    left = round(x + width / 2 - sprite_width / 2)
+    top = round(y + height - sprite_height)
+    source = Rectangle(0, 0, texture.width * facing, texture.height)
+    dest = Rectangle(left, top, sprite_width, sprite_height)
+    draw_texture_pro(texture, source, dest, Vector2(0, 0), 0, WHITE)
+
+
+def draw_placeholder(x, y, width, height, team):
+    """Draw a team-colored rectangle filling the width x height box at (x, y)."""
+    box = Rectangle(x, y, width, height)
+    draw_rectangle_rec(box, TEAM_COLORS[team])
+    draw_rectangle_lines_ex(box, OUTLINE_THICKNESS, TEAM_OUTLINE_COLORS[team])
+
+
+def draw_level(world):
+    """Draw the block grid and the ground strip along the bottom."""
+    block = world["block_size"]
+    for grid_x in range(0, world["width"], block):
+        draw_line(grid_x, 0, grid_x, world["height"], GRID_COLOR)
+    for grid_y in range(0, world["height"], block):
+        draw_line(0, grid_y, world["width"], grid_y, GRID_COLOR)
+
+    ground_top = world["height"] - world["ground_height"]
+    draw_rectangle(0, ground_top, world["width"], world["ground_height"], GROUND_COLOR)
+    draw_rectangle(0, ground_top, world["width"], 8, GROUND_TOP_COLOR)
 
 
 def draw_text_centered(text, center_x, y, font_size, color):
     """Draw text horizontally centered on center_x."""
     width = measure_text(text, font_size)
     draw_text(text, int(center_x - width / 2), int(y), font_size, color)
+
+
+def draw_notice(text, screen_width, screen_height):
+    """A short message in a dark box near the bottom of the screen."""
+    font_size = 20
+    padding = 10
+    width = measure_text(text, font_size) + padding * 2
+    x = (screen_width - width) / 2
+    y = screen_height - 60
+    draw_rectangle(int(x), int(y), int(width), font_size + padding * 2, Color(0, 0, 0, 190))
+    draw_text(text, int(x + padding), int(y + padding), font_size, RAYWHITE)
 
 
 def draw_disconnected_overlay(reason, screen_width, screen_height):
