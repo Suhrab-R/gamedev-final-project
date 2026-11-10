@@ -51,5 +51,5 @@ def reload_settings(settings):
 
 
 def load_characters():
-    """The list of selectable characters (id, display name, per-team sprites if any)."""
+    """The list of selectable characters (id, display name, sprite folder if any)."""
     return load_json("characters.json")["characters"]

@@ -37,13 +37,20 @@ class Player:
     run_held: bool = False  # shift
     last_input_seq: int = 0
 
-    # Server only: physics state (see entities/physics.py).
+    # Physics state (see entities/physics.py). The host's server owns it;
+    # vx and on_ground are also sent to clients in snapshots, because the
+    # walk animation needs them (see entities/animation.py).
     vx: float = 0.0  # pixels per second; positive is right
-    vy: float = 0.0  # pixels per second; positive is down
     on_ground: bool = False
+    # Server only from here down.
+    vy: float = 0.0  # pixels per second; positive is down
     jump_rising: bool = False  # rising from a jump with jump still held (weak gravity)
     jump_was_held: bool = False  # jump_held last frame, to detect a fresh press
     jump_buffer_left: float = 0.0  # seconds a recent jump press stays usable (jump buffering)
+
+    # Drawing only, kept by each screen for itself (never sent): how far this
+    # player has walked since they last stood still, which picks the walk frame.
+    walk_distance: float = 0.0
 
     def to_roster_dict(self):
         """The fields sent over TCP in a roster message."""

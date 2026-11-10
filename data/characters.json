@@ -1,21 +1,8 @@
 {
   "characters": [
-    { "id": "rectangle", "name": "Rectangle" },
-    {
-      "id": "luigi",
-      "name": "Luigi",
-      "sprites": {
-        "blue": "sprites/blue_team/luigi_idle.png",
-        "red": "sprites/red_team/luigi_idle.png"
-      }
-    },
-    {
-      "id": "mario",
-      "name": "Mario",
-      "sprites": {
-        "blue": "sprites/blue_team/mario_idle.png",
-        "red": "sprites/red_team/mario_idle.png"
-      }
-    }
+    { "id": "mario", "name": "Mario", "sprite_folder": "sprites/mario" },
+    { "id": "luigi", "name": "Luigi", "sprite_folder": "sprites/luigi" },
+    { "id": "toad", "name": "Toad", "sprite_folder": "sprites/toad" },
+    { "id": "yoshi", "name": "Yoshi", "sprite_folder": "sprites/yoshi" }
   ]
 }

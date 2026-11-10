@@ -148,10 +148,12 @@ class ClientSession:
         self._latest_frame = frame
         self.has_positions = True
 
-        for player_id, x, y, facing, jump_count in snapshot_players:
+        for player_id, x, y, facing, jump_count, vx, on_ground in snapshot_players:
             player = self.players.get(player_id)
             if player is not None:
                 player.x = x
                 player.y = y
                 player.facing = facing
                 player.jump_count = jump_count
+                player.vx = vx
+                player.on_ground = on_ground

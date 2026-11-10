@@ -13,6 +13,9 @@
     "height": 90,
     "sprite_scale": 3
   },
+  "animation": {
+    "walk_frame_distance": 22
+  },
   "physics": {
     "walk_speed": 270,
     "run_speed": 540,

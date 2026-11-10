@@ -198,8 +198,9 @@ class GameServer:
             step_player(player, dt, self.settings)
 
     def _send_snapshots(self):
-        """Send every in-game player's position, facing and jump count to every client over UDP."""
-        in_game = [(p.id, p.x, p.y, p.facing, p.jump_count)
+        """Send every in-game player's position, facing, jump count, speed and
+        on-ground flag to every client over UDP."""
+        in_game = [(p.id, p.x, p.y, p.facing, p.jump_count, round(p.vx), p.on_ground)
                    for p in self.players.values() if p.character is not None]
         packet = protocol.pack_snapshot(self.frame, in_game)
         for connection in self.connections.values():

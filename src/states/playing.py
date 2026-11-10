@@ -9,6 +9,7 @@ client it is the newest snapshot.
 from pyray import *
 
 from core.state_machine import GameState
+from entities import animation
 from ui.draw import (
     BACKGROUND_COLOR, MUTED_TEXT_COLOR, TEAM_COLORS, TEXT_COLOR,
     draw_disconnected_overlay, draw_level, draw_text_centered,
@@ -56,6 +57,8 @@ class PlayingState(GameState):
         # Send this frame's keys. The host moves us; we just draw the result.
         self.game.session.send_input(*self._read_input())
         self._play_jump_sounds()
+        for player in self.game.session.players.values():
+            animation.advance(player, dt)
 
     def _play_jump_sounds(self):
         """Play the jump sound for every player whose jump count changed.
@@ -107,6 +110,7 @@ class PlayingState(GameState):
         my_id = game.session.my_id
         width = game.settings["player"]["width"]
         height = game.settings["player"]["height"]
+        walk_frame_distance = game.settings["animation"]["walk_frame_distance"]
 
         others = []
         me = None
@@ -123,8 +127,9 @@ class PlayingState(GameState):
             others.append(me)
 
         for player in others:
+            frame = animation.frame_name(player, walk_frame_distance)
             game.draw_player_character(player.character, player.x, player.y,
-                                       width, height, player.team, player.facing)
+                                       width, height, player.team, player.facing, frame=frame)
 
             label = "YOU" if player.id == my_id else f"P{player.id}"
             if player.is_host:

@@ -32,11 +32,12 @@ class Game:
         self.notice = ""
         self.notice_time_left = 0.0
 
-    def draw_player_character(self, character_id, x, y, width, height, team, facing=1, sprite_scale=None):
-        """Draw a character (sprite or placeholder rectangle) in the box at (x, y)."""
+    def draw_player_character(self, character_id, x, y, width, height, team, facing=1, sprite_scale=None,
+                              frame="idle"):
+        """Draw a character (sprite frame or placeholder rectangle) in the box at (x, y)."""
         if sprite_scale is None:
             sprite_scale = self.settings["player"]["sprite_scale"]
-        texture = self.assets.character_texture(character_id, team)
+        texture = self.assets.character_texture(character_id, team, frame)
         draw_character(texture, x, y, width, height, team, facing, sprite_scale)
 
     def my_player(self):
