@@ -13,6 +13,12 @@ these Player objects directly.
 Team rule: a new player joins the smaller team. When the teams are even, the
 host gets a random team and after that teams alternate (blue, red, blue, ...
 or red, blue, red, ...).
+
+The server also owns the enemies from data/level.json and runs their AI
+(entities/enemy.py) every frame after moving the players; their positions
+and AI states go out in the same snapshots. If an enemy touches a player,
+the whole game goes back to the start (every player respawns, every enemy
+resets).
 """
 
 import queue
@@ -20,6 +26,7 @@ import random
 import socket
 import threading
 
+from entities.enemy import STATES, Enemy, EnemyBrain
 from entities.physics import step_player
 from entities.player import TEAM_BLUE, TEAM_RED, TEAMS, Player, other_team
 from net import protocol
@@ -46,9 +53,10 @@ def get_lan_ip():
 
 
 class GameServer:
-    def __init__(self, settings, characters, port):
+    def __init__(self, settings, characters, level, port):
         self.port = port
         self.settings = settings
+        self.platforms = level["platforms"]
         self.valid_characters = {character["id"] for character in characters}
 
         # TCP messages from all client threads land here; only the game loop reads it.
@@ -62,6 +70,10 @@ class GameServer:
         self.join_order = []  # player ids, oldest first
         self.player_id_by_token = {}  # UDP token -> player id
         self._next_id = 1
+
+        self.enemies = {}  # enemy id -> Enemy
+        self.enemy_brains = []  # one EnemyBrain (AI state machine) per enemy
+        self._create_enemies(level["enemies"])
 
     # ------------------------------------------------------------------
     # Starting, stepping and stopping (called by HostSession)
@@ -121,7 +133,11 @@ class GameServer:
         if player is None or character_id not in self.valid_characters or player.character is not None:
             return  # unknown player or character, or already chosen
         player.character = character_id
-        player.x, player.y = self._spawn_position(player)
+        # The next free spot on the team's side: one per teammate already in the game.
+        teammates_in_game = sum(1 for other in self.players.values()
+                                if other is not player and other.team == player.team
+                                and other.character is not None)
+        player.x, player.y = self._spawn_position(player, teammates_in_game)
         player.vx = player.vy = 0.0
         self._broadcast_roster()
         print(f"Player {player.id} chose {character_id}.")
@@ -191,18 +207,30 @@ class GameServer:
                 apply_input(player, input_x, input_y, jump_held, run_held)
 
     def _update(self, dt):
-        """Run every in-game player's physics with the keys they are holding."""
+        """Run every in-game player's physics with the keys they are holding,
+        then let every enemy's AI react to where the players now are."""
         for player in self.players.values():
             if player.character is None:
                 continue  # still on the character select screen
-            step_player(player, dt, self.settings)
+            step_player(player, dt, self.settings, self.platforms)
+        for brain in self.enemy_brains:
+            brain.update(dt)
+
+        # An enemy touching any player sends everyone back to the start.
+        for brain in self.enemy_brains:
+            caught = brain.touching_player()
+            if caught is not None:
+                print(f"Player {caught.id} touched enemy {brain.enemy.id}: back to the start.")
+                self._reset_to_start()
+                break
 
     def _send_snapshots(self):
         """Send every in-game player's position, facing, jump count, speed and
-        on-ground flag to every client over UDP."""
+        on-ground flag, and every enemy's position and AI state, to every client over UDP."""
         in_game = [(p.id, p.x, p.y, p.facing, p.jump_count, round(p.vx), p.on_ground)
                    for p in self.players.values() if p.character is not None]
-        packet = protocol.pack_snapshot(self.frame, in_game)
+        enemies = [(e.id, e.x, e.y, STATES.index(e.state)) for e in self.enemies.values()]
+        packet = protocol.pack_snapshot(self.frame, in_game, enemies)
         for connection in self.connections.values():
             if connection.udp_address is None:
                 continue  # this client hasn't sent a UDP packet yet
@@ -220,6 +248,38 @@ class GameServer:
         data = protocol.encode(message)  # encode once, send to everyone
         for connection in self.connections.values():
             connection.send_encoded(data)
+
+    # ------------------------------------------------------------------
+    # Enemies
+    # ------------------------------------------------------------------
+
+    def _create_enemies(self, enemy_list):
+        """Make the enemies listed in level.json (each brain puts its enemy at its start)."""
+        size = self.settings["enemy"]["size"]
+        for enemy_id, data in enumerate(enemy_list, start=1):
+            platform = self.platforms[data["platform"]]
+            enemy = Enemy(id=enemy_id, platform=data["platform"], size=size)
+            self.enemies[enemy_id] = enemy
+            self.enemy_brains.append(EnemyBrain(enemy, platform, self.players, self.settings))
+
+    def _reset_to_start(self):
+        """Put the game back to the beginning: every in-game player back at
+        their spawn point, standing still, and every enemy back at its start,
+        patrolling."""
+        slots = {team: 0 for team in TEAMS}  # spawn slots used so far, per team
+        for player_id in self.join_order:  # oldest first, the same order they spawned in
+            player = self.players[player_id]
+            if player.character is None:
+                continue  # still choosing a character; not in the game yet
+            player.x, player.y = self._spawn_position(player, slots[player.team])
+            slots[player.team] += 1
+            player.vx = player.vy = 0.0
+            player.on_ground = False
+            player.standing_on = None
+            player.jump_rising = False
+            player.jump_buffer_left = 0.0
+        for brain in self.enemy_brains:
+            brain.reset()
 
     # ------------------------------------------------------------------
     # Players joining and leaving
@@ -279,19 +339,14 @@ class GameServer:
         last_player = self.players[self.join_order[-1]]
         return other_team(last_player.team)
 
-    def _spawn_position(self, player):
-        """Spawn standing on the ground on the team's side, next to teammates.
+    def _spawn_position(self, player, slot):
+        """Spawn standing on the ground on the team's side, at spawn spot number slot.
 
         Blue spawns from the left going right, red from the right going left.
         After per_row players the row starts over (players can overlap).
         """
         spawn = self.settings["spawn"]
-
-        teammates_in_game = 0
-        for other in self.players.values():
-            if other is not player and other.team == player.team and other.character is not None:
-                teammates_in_game += 1
-        offset = (teammates_in_game % spawn["per_row"]) * spawn["spacing_x"]
+        offset = (slot % spawn["per_row"]) * spawn["spacing_x"]
 
         if player.team == TEAM_BLUE:
             x = spawn["blue_x"] + offset

@@ -12,12 +12,14 @@ client:
 and read the same attributes:
 
     players            player id -> Player
+    enemies            enemy id -> Enemy
     my_id, my_team     None until this computer has a player
     disconnect_reason  None while everything is fine
     address            the "ip:port" shown on screen
     has_positions      True once player positions are coming in
 """
 
+from entities.enemy import STATES, Enemy
 from entities.player import Player
 from net import protocol
 from net.client import NetworkClient
@@ -27,12 +29,13 @@ from net.game_server import GameServer, get_lan_ip
 class HostSession:
     """This computer runs the server inside the game, and plays on it."""
 
-    def __init__(self, settings, characters, port):
-        self.server = GameServer(settings, characters, port)
+    def __init__(self, settings, characters, level, port):
+        self.server = GameServer(settings, characters, level, port)
         self.lan_ip = get_lan_ip()  # shown on screen so others know what to join
         self.address = f"{self.lan_ip}:{port}"
         # The host draws the server's real players directly, no network in between.
         self.players = self.server.players
+        self.enemies = self.server.enemies
         self.my_id = None
         self.my_team = None
         self.disconnect_reason = None
@@ -68,6 +71,7 @@ class ClientSession:
         self.net = NetworkClient(server_address, port)
         self.address = f"{server_address}:{port}"
         self.players = {}  # built from the host's roster and snapshots
+        self.enemies = {}  # built from snapshots
         self.my_id = None  # set when the host's welcome message arrives
         self.my_team = None
         self.disconnect_reason = None
@@ -139,8 +143,8 @@ class ClientSession:
             if player_id not in seen_ids:
                 del self.players[player_id]
 
-    def _apply_snapshot(self, frame, snapshot_players):
-        """Put every player exactly where the host says they are."""
+    def _apply_snapshot(self, frame, snapshot_players, snapshot_enemies):
+        """Put every player and enemy exactly where the host says they are."""
         # UDP can deliver packets late or out of order; ignore anything older
         # than what we already have.
         if frame <= self._latest_frame:
@@ -157,3 +161,18 @@ class ClientSession:
                 player.jump_count = jump_count
                 player.vx = vx
                 player.on_ground = on_ground
+
+        # Enemies only really exist on the host; here we just mirror the snapshot.
+        seen_ids = set()
+        for enemy_id, x, y, state_index in snapshot_enemies:
+            seen_ids.add(enemy_id)
+            enemy = self.enemies.get(enemy_id)
+            if enemy is None:
+                enemy = Enemy(id=enemy_id, platform=None)
+                self.enemies[enemy_id] = enemy
+            enemy.x = x
+            enemy.y = y
+            enemy.state = STATES[state_index]
+        for enemy_id in list(self.enemies):
+            if enemy_id not in seen_ids:
+                del self.enemies[enemy_id]

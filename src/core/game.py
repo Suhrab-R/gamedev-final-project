@@ -17,9 +17,10 @@ NOTICE_SECONDS = 2.5  # how long the "settings reloaded" message stays up
 
 
 class Game:
-    def __init__(self, settings, characters, session):
+    def __init__(self, settings, characters, level, session):
         self.settings = settings
         self.characters = characters
+        self.level = level  # platforms and enemies from data/level.json
         self.session = session
         # The window size is fixed once it opens, so editing world width/height
         # needs a restart (reloading settings won't resize the window).

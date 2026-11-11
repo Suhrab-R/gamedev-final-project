@@ -47,6 +47,8 @@ class Player:
     jump_rising: bool = False  # rising from a jump with jump still held (weak gravity)
     jump_was_held: bool = False  # jump_held last frame, to detect a fresh press
     jump_buffer_left: float = 0.0  # seconds a recent jump press stays usable (jump buffering)
+    standing_on: int | None = None  # index of the platform the player is standing on, if any
+    air_speed_cap: float = 0.0  # top speed while in the air, fixed at the moment of leaving the ground
 
     # Drawing only, kept by each screen for itself (never sent): how far this
     # player has walked since they last stood still, which picks the walk frame.

@@ -11,7 +11,9 @@ What makes it feel like NSMBW:
   moving. While the jump button is held and you are still rising, gravity is
   much weaker, so holding the button longer gives a higher jump. Letting go
   switches to full gravity, which cuts the jump short.
-- In the air you keep your momentum and can only steer a little.
+- In the air you keep your momentum and can only steer a little, and you
+  can't speed up past the speed you jumped at (holding run mid-air does
+  nothing; only a running jump goes at running speed).
 
 The numbers live in data/settings.json ("physics"): speeds in pixels per
 second, accelerations in pixels per second squared. They approximate NSMBW's
@@ -29,12 +31,15 @@ def approach(value, target, amount):
     return max(value - amount, target)
 
 
-def step_player(player, dt, settings):
-    """Advance one player's physics by dt seconds, using their held buttons."""
+def step_player(player, dt, settings, platforms=()):
+    """Advance one player's physics by dt seconds, using their held buttons.
+
+    platforms is the level's list of platforms (data/level.json).
+    """
     physics = settings["physics"]
     _update_horizontal_speed(player, dt, physics)
     _update_vertical_speed(player, dt, physics)
-    _move_and_collide(player, dt, settings)
+    _move_and_collide(player, dt, settings, platforms)
     # Remembered so next frame can tell a fresh jump press from a held button.
     player.jump_was_held = player.jump_held
 
@@ -46,6 +51,11 @@ def _update_horizontal_speed(player, dt, physics):
         # in the air), like Mario does.
         player.facing = direction
     max_speed = physics["run_speed"] if player.run_held else physics["walk_speed"]
+    if not player.on_ground:
+        # In the air the top speed can't go above what it was when you left
+        # the ground, so pressing run mid-jump doesn't speed you up. (A
+        # running jump keeps its running speed.)
+        max_speed = min(max_speed, player.air_speed_cap)
 
     if direction == 0:
         # No direction held: slide to a stop (barely slow down in the air).
@@ -71,6 +81,12 @@ def _update_horizontal_speed(player, dt, physics):
             rate = physics["run_acceleration"]
 
     player.vx = approach(player.vx, target, rate * dt)
+
+    if player.on_ground:
+        # Remember the top speed for the air: walking speed, or more if we're
+        # going faster than that. It stops updating the moment we leave the
+        # ground (a jump or walking off a ledge), so it holds the take-off speed.
+        player.air_speed_cap = max(physics["walk_speed"], abs(player.vx))
 
 
 def _update_vertical_speed(player, dt, physics):
@@ -101,11 +117,12 @@ def _update_vertical_speed(player, dt, physics):
     player.vy = min(player.vy + gravity * dt, physics["max_fall_speed"])
 
 
-def _move_and_collide(player, dt, settings):
+def _move_and_collide(player, dt, settings, platforms):
     world = settings["world"]
     width = settings["player"]["width"]
     height = settings["player"]["height"]
 
+    old_bottom = player.y + height  # where the feet were before this frame's move
     player.x += player.vx * dt
     player.y += player.vy * dt
 
@@ -123,11 +140,28 @@ def _move_and_collide(player, dt, settings):
         player.vy = 0.0
         player.jump_rising = False
 
+    player.on_ground = False
+    player.standing_on = None
+
+    # One-way platforms (like NSMBW's sky platforms): you can jump up through
+    # them from below and land on top. A player only lands while falling, and
+    # only if their feet were at or above the platform's top last frame and
+    # are at or below it now, i.e. they crossed the top this frame.
+    if player.vy >= 0:
+        new_bottom = player.y + height
+        for index, platform in enumerate(platforms):
+            top = platform["y"]
+            overlaps = player.x < platform["x"] + platform["width"] and player.x + width > platform["x"]
+            if overlaps and old_bottom <= top <= new_bottom:
+                player.y = top - height
+                player.vy = 0.0
+                player.on_ground = True
+                player.standing_on = index  # enemies use this to notice players
+                break
+
     # The ground strip along the bottom of the screen.
     floor_y = world["height"] - world["ground_height"] - height
     if player.y >= floor_y:
         player.y = floor_y
         player.vy = 0.0
         player.on_ground = True
-    else:
-        player.on_ground = False

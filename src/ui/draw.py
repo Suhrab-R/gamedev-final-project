@@ -7,6 +7,7 @@ shapes are drawn filling it. Either way the look never changes gameplay.
 
 from pyray import *
 
+from entities.enemy import CHASE, PATROL
 from entities.player import TEAM_BLUE, TEAM_RED
 
 BACKGROUND_COLOR = Color(235, 236, 242, 255)
@@ -26,6 +27,16 @@ TEAM_OUTLINE_COLORS = {
 GRID_COLOR = Color(222, 223, 232, 255)
 GROUND_COLOR = Color(150, 105, 70, 255)
 GROUND_TOP_COLOR = Color(90, 160, 70, 255)
+
+PLATFORM_COLOR = Color(176, 124, 84, 255)
+PLATFORM_TOP_COLOR = Color(222, 178, 120, 255)
+
+# Enemies are plain squares for now; the color shows their AI state.
+ENEMY_COLORS = {
+    PATROL: Color(230, 41, 55, 255),  # red
+    CHASE: Color(120, 0, 15, 255),  # darker red
+}
+ENEMY_OUTLINE_COLOR = Color(60, 0, 8, 255)
 
 OUTLINE_THICKNESS = 3.0
 
@@ -65,8 +76,8 @@ def draw_placeholder(x, y, width, height, team):
     draw_rectangle_lines_ex(box, OUTLINE_THICKNESS, TEAM_OUTLINE_COLORS[team])
 
 
-def draw_level(world):
-    """Draw the block grid and the ground strip along the bottom."""
+def draw_level(world, platforms):
+    """Draw the block grid, the ground strip along the bottom and the platforms."""
     block = world["block_size"]
     for grid_x in range(0, world["width"], block):
         draw_line(grid_x, 0, grid_x, world["height"], GRID_COLOR)
@@ -76,6 +87,34 @@ def draw_level(world):
     ground_top = world["height"] - world["ground_height"]
     draw_rectangle(0, ground_top, world["width"], world["ground_height"], GROUND_COLOR)
     draw_rectangle(0, ground_top, world["width"], 8, GROUND_TOP_COLOR)
+
+    for platform in platforms:
+        draw_rectangle(platform["x"], platform["y"], platform["width"], platform["height"], PLATFORM_COLOR)
+        draw_rectangle(platform["x"], platform["y"], platform["width"], 6, PLATFORM_TOP_COLOR)
+
+
+def draw_enemy(enemy, size):
+    """Draw an enemy as a square colored by its AI state."""
+    box = Rectangle(enemy.x, enemy.y, size, size)
+    draw_rectangle_rec(box, ENEMY_COLORS[enemy.state])
+    draw_rectangle_lines_ex(box, OUTLINE_THICKNESS, ENEMY_OUTLINE_COLOR)
+
+
+def draw_enemy_label(enemy, size):
+    """The enemy's AI state name above it, so state changes are easy to see.
+
+    Drawn after the players so a player standing over the enemy can't hide
+    it, as white text on a badge of the state's color so it's readable on top
+    of anything.
+    """
+    text = enemy.state.upper()
+    font_size = 14
+    padding = 3
+    text_width = measure_text(text, font_size)
+    left = enemy.x + size / 2 - text_width / 2 - padding
+    top = enemy.y - font_size - padding * 2 - 4
+    draw_rectangle(int(left), int(top), text_width + padding * 2, font_size + padding * 2, ENEMY_COLORS[enemy.state])
+    draw_text(text, int(left + padding), int(top + padding), font_size, RAYWHITE)
 
 
 def draw_text_centered(text, center_x, y, font_size, color):

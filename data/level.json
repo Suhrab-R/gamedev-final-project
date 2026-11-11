@@ -1,0 +1,8 @@
+{
+  "platforms": [
+    { "x": 448, "y": 480, "width": 432, "height": 24 }
+  ],
+  "enemies": [
+    { "platform": 0 }
+  ]
+}

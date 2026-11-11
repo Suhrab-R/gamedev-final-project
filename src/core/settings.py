@@ -50,6 +50,12 @@ def reload_settings(settings):
     return None
 
 
+def load_level():
+    """The level layout: platforms ({"x", "y", "width", "height"} in pixels,
+    x/y = top-left) and enemies ({"platform": index of the platform it lives on})."""
+    return load_json("level.json")
+
+
 def load_characters():
     """The list of selectable characters (id, display name, sprite folder if any)."""
     return load_json("characters.json")["characters"]

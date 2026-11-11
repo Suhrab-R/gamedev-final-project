@@ -12,7 +12,7 @@ from core.state_machine import GameState
 from entities import animation
 from ui.draw import (
     BACKGROUND_COLOR, MUTED_TEXT_COLOR, TEAM_COLORS, TEXT_COLOR,
-    draw_disconnected_overlay, draw_level, draw_text_centered,
+    draw_disconnected_overlay, draw_enemy, draw_enemy_label, draw_level, draw_text_centered,
 )
 
 # Show a hint if no positions have arrived after this many seconds.
@@ -94,8 +94,13 @@ class PlayingState(GameState):
         session = game.session
         clear_background(BACKGROUND_COLOR)
 
-        draw_level(game.settings["world"])
+        enemy_size = game.settings["enemy"]["size"]
+        draw_level(game.settings["world"], game.level["platforms"])
+        for enemy in session.enemies.values():
+            draw_enemy(enemy, enemy_size)
         self._draw_players()
+        for enemy in session.enemies.values():
+            draw_enemy_label(enemy, enemy_size)
         self._draw_hud()
 
         if not session.has_positions and self.time_in_state > NO_DATA_WARNING_SECONDS:

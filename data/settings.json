@@ -16,6 +16,13 @@
   "animation": {
     "walk_frame_distance": 22
   },
+  "enemy": {
+    "size": 40,
+    "patrol_speed": 100,
+    "chase_speed": 200,
+    "chase_acceleration": 600,
+    "arrive_distance": 6
+  },
   "physics": {
     "walk_speed": 270,
     "run_speed": 540,
