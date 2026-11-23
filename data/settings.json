@@ -3,46 +3,49 @@
     "port": 5555
   },
   "world": {
-    "width": 1280,
-    "height": 720,
-    "block_size": 48,
-    "ground_height": 96
+    "width": 1636,
+    "height": 920,
+    "block_size": 40,
+    "ground_height": 80
   },
   "player": {
-    "width": 40,
-    "height": 90,
-    "sprite_scale": 3
+    "scale": 2,
+    "hitbox_width": 13,
+    "hitbox_height": 30,
+    "respawn_invulnerable_seconds": 0,
+    "lives": 5
   },
   "animation": {
-    "walk_frame_distance": 22
+    "walk_frame_distance": 18
   },
   "enemy": {
-    "size": 40,
-    "patrol_speed": 100,
-    "chase_speed": 200,
-    "chase_acceleration": 600,
-    "arrive_distance": 6
+    "scale": 1.8,
+    "size": 24,
+    "patrol_speed": 83,
+    "chase_speed": 167,
+    "chase_acceleration": 500,
+    "arrive_distance": 5
   },
   "physics": {
-    "walk_speed": 270,
-    "run_speed": 540,
-    "walk_acceleration": 675,
-    "run_acceleration": 324,
-    "deceleration": 1000,
-    "skid_deceleration": 1600,
-    "air_acceleration": 600,
-    "air_deceleration": 150,
-    "jump_speed": 653,
-    "jump_run_bonus": 75,
-    "jump_hold_gravity": 1110,
-    "gravity": 3670,
-    "max_fall_speed": 720,
+    "walk_speed": 248,
+    "run_speed": 495,
+    "walk_acceleration": 619,
+    "run_acceleration": 297,
+    "deceleration": 916,
+    "skid_deceleration": 1466,
+    "air_acceleration": 550,
+    "air_deceleration": 138,
+    "jump_speed": 598,
+    "jump_run_bonus": 69,
+    "jump_hold_gravity": 1018,
+    "gravity": 3364,
+    "max_fall_speed": 660,
     "jump_buffer_time": 0.12
   },
   "spawn": {
-    "blue_x": 120,
-    "red_x": 1120,
-    "spacing_x": 60,
+    "blue_x": 100,
+    "red_x": 1503,
+    "spacing_x": 50,
     "per_row": 5
   },
   "client": {
@@ -50,5 +53,10 @@
   },
   "audio": {
     "master_volume": 0.7
+  },
+  "display": {
+    "window_screen_fraction": 0.639,
+    "min_window_scale": 0.5,
+    "smooth_scaling": true
   }
 }

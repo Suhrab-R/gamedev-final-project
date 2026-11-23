@@ -1,10 +1,12 @@
 """Enemies and their AI.
 
-An enemy lives on one platform from data/level.json. What it does is
-decided by a state machine (the same StateMachine class the game uses for
-its screens) with two states and two transitions:
+An enemy lives on one platform from data/level.json. There are two kinds
+(core/level.py): a "regular" enemy only ever patrols, and a "chaser" also
+chases. What an enemy does is decided by a state machine (the same
+StateMachine class the game uses for its screens) with two states and two
+transitions:
 
-    PATROL --(a player lands on the enemy's platform)----------------> CHASE
+    PATROL --(chasers only: a player lands on the enemy's platform)----> CHASE
     CHASE  --(the target has left the platform and no one else is on it)--> PATROL
 
 PATROL  Walks to one end of the platform, turns round and walks to the
@@ -28,13 +30,15 @@ state) sends the whole game back to the start: GameServer respawns every
 player and resets every enemy. Jumping over it is the way past.
 
 Only the host runs this (GameServer). Clients just draw each enemy where the
-host's snapshots say it is, colored by its state.
+host's snapshots say it is (a chaser's eyes turn red while it chases).
 """
 
 from dataclasses import dataclass
 
+from core.level import CHASER
 from core.state_machine import StateMachine
 from entities.physics import approach
+from entities.player import hitbox_size
 
 PATROL = "patrol"
 CHASE = "chase"
@@ -45,9 +49,10 @@ STATES = (PATROL, CHASE)  # snapshots send the state as its index in this tuple
 class Enemy:
     id: int
     platform: int | None  # index of the platform it lives on (None on clients)
+    kind: str = CHASER  # "regular" or "chaser" (core/level.py)
     x: float = 0.0  # top-left corner
     y: float = 0.0
-    size: float = 40.0  # it's a square for now
+    size: float = 40.0  # its hitbox is a size x size square
     vx: float = 0.0  # pixels per second; positive is right
     direction: int = 1  # 1 = moving/facing right, -1 = left
     state: str = PATROL  # name of the current AI state (sent to clients)
@@ -79,11 +84,13 @@ class PatrolState(EnemyState):
         brain = self.brain
         enemy = brain.enemy
 
-        # Transition: a player has landed on my platform -> chase them.
-        target = brain.player_on_platform()
-        if target is not None:
-            brain.machine.change(ChaseState(brain, target.id))
-            return
+        # Transition (chasers only): a player has landed on my platform ->
+        # chase them. A regular enemy never leaves this state.
+        if enemy.kind == CHASER:
+            target = brain.player_on_platform()
+            if target is not None:
+                brain.machine.change(ChaseState(brain, target.id))
+                return
 
         # Movement: walk at a steady speed; at an end of the platform, turn round.
         enemy.vx = enemy.direction * brain.tuning["patrol_speed"]
@@ -139,18 +146,22 @@ class ChaseState(EnemyState):
 class EnemyBrain:
     """Runs one enemy's state machine on the host. The enemy starts in PATROL."""
 
-    def __init__(self, enemy, platform, players, settings):
+    def __init__(self, enemy, platform, start_center_x, players, settings):
         self.enemy = enemy
-        self.platform = platform  # {"x", "y", "width", "height"} from level.json
+        self.platform = platform  # {"x", "y", "width", "height", "solid"} from level.json
+        self.start_center_x = start_center_x  # where it starts (and goes back to on a reset)
         self.players = players  # the server's players (only read here)
         self.settings = settings
         self.machine = StateMachine()
         self.reset()
 
     def reset(self):
-        """Put the enemy back at its start: the middle of its platform, patrolling right."""
+        """Put the enemy back at its start position on its platform, patrolling right."""
         enemy = self.enemy
-        enemy.x = self.platform["x"] + (self.platform["width"] - enemy.size) / 2
+        left_end = self.platform["x"]
+        right_end = self.platform["x"] + self.platform["width"] - enemy.size
+        start_x = self.start_center_x - enemy.size / 2
+        enemy.x = min(max(start_x, left_end), right_end)  # kept on the platform
         enemy.y = self.platform["y"] - enemy.size  # standing on top of the platform
         enemy.vx = 0.0
         enemy.direction = 1
@@ -163,7 +174,7 @@ class EnemyBrain:
 
     @property
     def player_width(self):
-        return self.settings["player"]["width"]
+        return hitbox_size(self.settings)[0]
 
     def update(self, dt):
         self.machine.update(dt)
@@ -190,19 +201,19 @@ class EnemyBrain:
     def player_on_platform(self):
         """The in-game player standing on this enemy's platform closest to it, or None."""
         on_platform = [player for player in self.players.values()
-                       if player.character is not None and player.standing_on == self.enemy.platform]
+                       if player.in_play and player.standing_on == self.enemy.platform]
         if not on_platform:
             return None
         enemy_center = self.enemy.x + self.enemy.size / 2
         return min(on_platform, key=lambda player: abs(player.x + self.player_width / 2 - enemy_center))
 
     def touching_player(self):
-        """An in-game player whose hitbox overlaps the enemy's square, or None."""
+        """An in-game player whose hitbox overlaps the enemy's square, or None.
+        Players who just respawned (invulnerable) don't count."""
         enemy = self.enemy
-        width = self.player_width
-        height = self.settings["player"]["height"]
+        width, height = hitbox_size(self.settings)
         for player in self.players.values():
-            if player.character is None:
+            if not player.in_play or player.invulnerable:
                 continue
             if (player.x < enemy.x + enemy.size and player.x + width > enemy.x
                     and player.y < enemy.y + enemy.size and player.y + height > enemy.y):
@@ -215,8 +226,8 @@ class EnemyBrain:
         Jumping (even right over the enemy) keeps the chase going. Walking or
         jumping off the side, or falling below the platform's top, ends it.
         """
-        if player.character is None:
+        if not player.in_play:
             return False
         center = player.x + self.player_width / 2
-        above_or_on = player.y + self.settings["player"]["height"] <= self.platform["y"] + 1
+        above_or_on = player.y + hitbox_size(self.settings)[1] <= self.platform["y"] + 1
         return self.platform["x"] <= center <= self.platform["x"] + self.platform["width"] and above_or_on

@@ -97,7 +97,7 @@ class CharacterSelectState(GameState):
         characters = self.game.characters
         # Keep the in-game hitbox's proportions, just scaled up.
         player = self.game.settings["player"]
-        preview_width = PREVIEW_HEIGHT * player["width"] / player["height"]
+        preview_width = PREVIEW_HEIGHT * player["hitbox_width"] / player["hitbox_height"]
         total_width = len(characters) * CARD_WIDTH + (len(characters) - 1) * CARD_GAP
         left = (screen_width - total_width) / 2
 

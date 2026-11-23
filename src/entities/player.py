@@ -16,6 +16,18 @@ def other_team(team):
     return TEAM_RED if team == TEAM_BLUE else TEAM_BLUE
 
 
+def hitbox_size(settings):
+    """(width, height) of every player's hitbox, in screen pixels.
+
+    settings.json gives the hitbox in sprite pixels (the same units as the
+    sprite images) and one "scale": how many screen pixels each sprite pixel
+    becomes. Multiplying both by the same scale means changing that one
+    number resizes the sprites and the hitbox together.
+    """
+    player = settings["player"]
+    return player["hitbox_width"] * player["scale"], player["hitbox_height"] * player["scale"]
+
+
 @dataclass
 class Player:
     id: int
@@ -28,6 +40,9 @@ class Player:
     # Goes up by 1 every time this player jumps (wrapping 255 -> 0). Sent in
     # snapshots; a screen plays the jump sound when it sees the number change.
     jump_count: int = 0
+    # Lives left (settings.json "player.lives" to start). At 0 the player is
+    # out: no longer in the level. Sent in snapshots for the HUD.
+    lives: int = 0
 
     # Server only: the keys this player is holding right now, and the sequence
     # number of the newest input packet (older, late ones are ignored).
@@ -42,6 +57,9 @@ class Player:
     # walk animation needs them (see entities/animation.py).
     vx: float = 0.0  # pixels per second; positive is right
     on_ground: bool = False
+    # Just respawned: obstacles and enemies can't hurt them, and they blink.
+    # Also sent in snapshots, so every screen can make them blink.
+    invulnerable: bool = False
     # Server only from here down.
     vy: float = 0.0  # pixels per second; positive is down
     jump_rising: bool = False  # rising from a jump with jump still held (weak gravity)
@@ -49,10 +67,26 @@ class Player:
     jump_buffer_left: float = 0.0  # seconds a recent jump press stays usable (jump buffering)
     standing_on: int | None = None  # index of the platform the player is standing on, if any
     air_speed_cap: float = 0.0  # top speed while in the air, fixed at the moment of leaving the ground
+    # The last platform the player stood on (None = the ground) and where on
+    # it, so falling below the team's camera can put them back there.
+    last_platform: int | None = None
+    last_platform_x: float = 0.0
+    # How fast (px/s, + = right) the thing the player is standing on is moving:
+    # a runner level's obstacles move left, everything else is still (0). In
+    # the air it keeps the value from what they jumped or walked off.
+    ground_vx: float = 0.0
+    flying: bool = False  # the level editor's fly mode (moves freely, no gravity or collisions)
+    invulnerable_left: float = 0.0  # seconds of respawn protection left (see GameServer)
 
     # Drawing only, kept by each screen for itself (never sent): how far this
     # player has walked since they last stood still, which picks the walk frame.
     walk_distance: float = 0.0
+
+    @property
+    def in_play(self):
+        """True while this player is in the level: has picked a character and
+        still has lives left."""
+        return self.character is not None and self.lives > 0
 
     def to_roster_dict(self):
         """The fields sent over TCP in a roster message."""

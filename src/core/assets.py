@@ -25,6 +25,15 @@ SOUND_FILES = {
     "jump": "audio/NsmbwiiJump.wav",
 }
 
+# Enemy sprite name (used in code) -> file in assets/. Every enemy is a
+# Goomba for now: regular ones look normal, chasers have dark marks above
+# their head, and a chaser's eyes turn red while it chases.
+ENEMY_SPRITE_FILES = {
+    "regular": "sprites/enemies/goomba.png",
+    "chaser": "sprites/enemies/goomba_chaser.png",
+    "chaser_chasing": "sprites/enemies/goomba_chaser_chasing.png",
+}
+
 
 class Assets:
     def __init__(self, characters):
@@ -58,6 +67,15 @@ class Assets:
                     # sprite, so it falls back to a shape instead of crashing.
                     print(f"No {DEFAULT_FRAME}.png in {team_folder}; drawing a shape instead.")
 
+        # Enemy sprite name -> Texture, shared by every enemy that uses it.
+        self.enemy_textures = {}
+        for name, file_name in ENEMY_SPRITE_FILES.items():
+            texture = load_texture(str(ASSETS_DIR / file_name))
+            if texture.id == 0:
+                print(f"Could not load {file_name}; that enemy will be drawn as a square.")
+                continue
+            self.enemy_textures[name] = texture
+
         # Sound name -> Sound, loaded once and played whenever needed.
         self.sounds = {}
         for name, file_name in SOUND_FILES.items():
@@ -78,6 +96,11 @@ class Assets:
             texture = self.character_textures.get((character_id, team, DEFAULT_FRAME))
         return texture
 
+    def enemy_texture(self, name):
+        """The enemy sprite with this name ("regular", "chaser" or
+        "chaser_chasing"), or None (then it's drawn as a square)."""
+        return self.enemy_textures.get(name)
+
     def play(self, name):
         """Play a loaded sound by name (e.g. "jump"); does nothing if it failed to load."""
         sound = self.sounds.get(name)
@@ -89,6 +112,9 @@ class Assets:
         for texture in self.character_textures.values():
             unload_texture(texture)
         self.character_textures.clear()
+        for texture in self.enemy_textures.values():
+            unload_texture(texture)
+        self.enemy_textures.clear()
         for sound in self.sounds.values():
             unload_sound(sound)
         self.sounds.clear()

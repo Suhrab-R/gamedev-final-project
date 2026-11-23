@@ -10,14 +10,17 @@ everyone else connects to. Everyone else joins with the host's IP address:
 import argparse
 
 from core.game import Game
-from core.settings import load_characters, load_level, load_settings
+from core.settings import load_characters, load_settings
 from net.session import ClientSession, HostSession
+
+# Which level the game starts on (a file in data/). For now this goes straight
+# to level 2 (the runner); level 1 (the climb) is "level1.json".
+START_LEVEL = "level2.json"
 
 
 def main():
     settings = load_settings()
     characters = load_characters()
-    level = load_level()
 
     parser = argparse.ArgumentParser(description="Host or join a game.")
     parser.add_argument("--host", action="store_true",
@@ -29,10 +32,11 @@ def main():
     args = parser.parse_args()
 
     if args.host:
-        session = HostSession(settings, characters, level, args.port)
+        # Only the host reads the level file; it sends the level to everyone else.
+        session = HostSession(settings, characters, START_LEVEL, args.port)
     else:
         session = ClientSession(args.server, args.port)
-    Game(settings, characters, level, session).run()
+    Game(settings, characters, session).run()
 
 
 if __name__ == "__main__":

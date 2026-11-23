@@ -22,13 +22,14 @@ JUMP_FRAME = "jump"
 
 def is_walking(player):
     """On the ground and moving sideways (pushing into a wall counts as standing)."""
-    return player.on_ground and player.vx != 0
+    # Speed compared to what they stand on: riding a moving obstacle isn't walking.
+    return player.on_ground and player.vx - player.ground_vx != 0
 
 
 def advance(player, dt):
     """Add the distance walked this frame; call once per player per frame."""
     if is_walking(player):
-        player.walk_distance += abs(player.vx) * dt
+        player.walk_distance += abs(player.vx - player.ground_vx) * dt
     else:
         # Standing or in the air: the next walk starts again from walk_1.
         player.walk_distance = 0.0

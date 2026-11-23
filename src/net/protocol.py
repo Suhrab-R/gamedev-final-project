@@ -12,13 +12,17 @@ object per line ("newline-delimited JSON"):
     welcome            {"id", "team", "token", "udp_port"}   sent once on join
     roster             {"players": [{"id", "team", "character", "is_host", "x", "y"}, ...]}
                        sent whenever someone joins, leaves or picks a character
+    level              {"level": {"platforms", "enemies", "flag"}}   (core/level.py)
+                       sent on join and whenever the host changes the level
+    level_complete     {"player", "team", "seconds"}   a player reached the flag;
+                       everyone goes back to the start after that many seconds
 
 UDP (fast, may lose or reorder packets) for data sent every frame, packed as
 compact binary with the struct module:
 
   client -> host   input      the keys the player is holding (direction, jump, run)
-  host -> client   snapshot   every player's position, facing, jump count, speed and on-ground flag,
-                              and every enemy's position and AI state
+  host -> client   snapshot   the cameras, every player's position, facing, jump count, speed and on-ground flag,
+                              and every enemy's position, AI state and kind
 
 A lost UDP packet is simply replaced by the next one a frame later, so
 nothing ever stalls waiting for a resend (which is what TCP would do).
@@ -38,6 +42,8 @@ import struct
 WELCOME = "welcome"
 ROSTER = "roster"
 CHOOSE_CHARACTER = "choose_character"
+LEVEL = "level"
+LEVEL_COMPLETE = "level_complete"
 CONNECTED = "connected"
 DISCONNECTED = "disconnected"
 
@@ -84,13 +90,19 @@ PACKET_SNAPSHOT = 2
 # struct format codes: "<" little-endian with no padding, B = uint8,
 # H = uint16, h = int16, I = uint32, b = int8, f = float32, ? = bool.
 INPUT_PACKET = struct.Struct("<BIIbbB")  # packet type, player's token, sequence number, input x, input y, buttons
-SNAPSHOT_HEADER = struct.Struct("<BIBB")  # packet type, frame number, player count, enemy count
+# packet type, frame number, player count, enemy count, then the cameras: how
+# far a runner level's course has scrolled past the (still) screen,
+# and each team's camera height (world y at the top of their screen), blue
+# then red.
+SNAPSHOT_HEADER = struct.Struct("<BIBBfff")
 # player id, x, y, facing (1 or -1), jump count, horizontal speed (whole
-# pixels per second; plenty precise for animation), on the ground. Speed
-# and on-ground are only used to pick the walk animation frame.
-SNAPSHOT_PLAYER = struct.Struct("<HffbBh?")
-# enemy id, x, y, AI state (its index in entities.enemy.STATES).
-SNAPSHOT_ENEMY = struct.Struct("<HffB")
+# pixels per second; plenty precise for animation), on the ground,
+# invulnerable (just respawned; drawn blinking), lives left. Speed and
+# on-ground are only used to pick the walk animation frame.
+SNAPSHOT_PLAYER = struct.Struct("<HffbBh??B")
+# enemy id, x, y, AI state (its index in entities.enemy.STATES), kind (its
+# index in core.level.ENEMY_KINDS).
+SNAPSHOT_ENEMY = struct.Struct("<HffBB")
 
 # Bits of the input packet's buttons byte (several can be set at once).
 BUTTON_JUMP = 1
@@ -118,10 +130,11 @@ def unpack_input(data):
     return token, sequence, input_x, input_y, bool(buttons & BUTTON_JUMP), bool(buttons & BUTTON_RUN)
 
 
-def pack_snapshot(frame, players, enemies):
-    """players: list of (player_id, x, y, facing, jump_count, vx, on_ground).
-    enemies: list of (enemy_id, x, y, state_index). All players come first, then all enemies."""
-    data = SNAPSHOT_HEADER.pack(PACKET_SNAPSHOT, frame, len(players), len(enemies))
+def pack_snapshot(frame, cameras, players, enemies):
+    """cameras: (camera x, blue camera y, red camera y).
+    players: list of (player_id, x, y, facing, jump_count, vx, on_ground, invulnerable, lives).
+    enemies: list of (enemy_id, x, y, state_index, kind_index). All players come first, then all enemies."""
+    data = SNAPSHOT_HEADER.pack(PACKET_SNAPSHOT, frame, len(players), len(enemies), *cameras)
     for player in players:
         data += SNAPSHOT_PLAYER.pack(*player)
     for enemy in enemies:
@@ -130,9 +143,9 @@ def pack_snapshot(frame, players, enemies):
 
 
 def unpack_snapshot(data):
-    """Return (frame, players, enemies), or None if the packet is malformed."""
+    """Return (frame, cameras, players, enemies), or None if the packet is malformed."""
     try:
-        _, frame, player_count, enemy_count = SNAPSHOT_HEADER.unpack_from(data, 0)
+        _, frame, player_count, enemy_count, scroll_x, blue_camera, red_camera = SNAPSHOT_HEADER.unpack_from(data, 0)
         offset = SNAPSHOT_HEADER.size
         players = []
         for _ in range(player_count):
@@ -144,7 +157,7 @@ def unpack_snapshot(data):
             offset += SNAPSHOT_ENEMY.size
     except struct.error:
         return None
-    return frame, players, enemies
+    return frame, (scroll_x, blue_camera, red_camera), players, enemies
 
 
 def make_udp_socket(port=0):
